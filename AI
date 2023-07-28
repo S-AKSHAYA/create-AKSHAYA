@@ -1,0 +1,109 @@
+import pandas as pd
+import matplotlib.pyplot as plt
+from sklearn.model_selection import train_test_split, GridSearchCV
+from sklearn.preprocessing import StandardScaler, OneHotEncoder, LabelEncoder
+from sklearn.compose import ColumnTransformer
+from sklearn.pipeline import Pipeline
+from sklearn.impute import SimpleImputer
+from sklearn.ensemble import HistGradientBoostingRegressor
+from sklearn.metrics import r2_score
+
+# Step 1: Load the data from CSV
+data = pd.read_csv("Social_media4.csv")
+
+# Step 2: Extract the 'Year' and 'Time spent' columns from the DataFrame
+year_time_data = data[['Year', 'Time spent']]
+
+# Step 3: Group the data by 'Year' and calculate the total time spent for each year
+grouped_data = year_time_data.groupby('Year').mean()
+
+# Step 4: Plot the data using a bar chart
+plt.figure(figsize=(10, 6))
+plt.bar(grouped_data.index, grouped_data['Time spent'])
+plt.xlabel('Year')
+plt.ylabel('Average Time Spent')
+plt.title('Average Time Spent on Social Media by Year')
+plt.xticks(rotation=45)  # Rotate x-axis labels for better visibility
+plt.yticks(range(0, 10, 1))
+plt.show()
+
+# Step 5: Convert the target variable to numeric using LabelEncoder
+label_encoder = LabelEncoder()
+y = label_encoder.fit_transform(data['Social media'])
+
+# Step 6: Split the data into features (X) and target (y)
+target_column = "Social media"  # Replace "Social Media" with the name of your target column
+if target_column in data.columns:
+    X = data.drop(columns=[target_column])
+    y = label_encoder.transform(data[target_column])
+else:
+    raise KeyError(f"Column '{target_column}' not found in the DataFrame.")
+
+# Step 7: Split the data into training and test sets
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+# Step 8: Define the preprocessing steps for numeric and categorical features
+numeric_features = ['Age']
+numeric_transformer = Pipeline(steps=[
+    ('imputer', SimpleImputer(strategy='median')),
+    ('scaler', StandardScaler())
+])
+
+categorical_features = ['Time spent',
+                        'Exposed to inappropriate content on these platforms (out of 10)?',
+                        'Have you ever been a victim of any of these cyber crimes?',
+                        'Which type of communication do you generally prefer?',
+                        'Gender']
+categorical_transformer = Pipeline(steps=[
+    ('imputer', SimpleImputer(strategy='most_frequent')),
+    ('onehot', OneHotEncoder(handle_unknown='ignore', sparse_output=False))  # Use sparse_output=False for dense matrix
+])
+
+preprocessor = ColumnTransformer(
+    transformers=[
+        ('num', numeric_transformer, numeric_features),
+        ('cat', categorical_transformer, categorical_features)
+    ])
+
+# Step 9: Create the model pipeline
+model = Pipeline(steps=[
+    ('preprocessor', preprocessor),
+    ('regressor', HistGradientBoostingRegressor())
+])
+
+# Step 10: Define hyperparameters for tuning
+param_grid = {
+    'regressor__max_iter': [100, 200, 300],  # Number of boosting iterations
+    'regressor__max_depth': [None, 5, 10],   # Maximum depth of the individual estimators
+}
+
+# Step 11: Create GridSearchCV to find best hyperparameters
+grid_search = GridSearchCV(model, param_grid, cv=5, scoring='r2')
+grid_search.fit(X_train, y_train)
+
+# Step 12: Get the best model
+best_model = grid_search.best_estimator_
+
+# Step 13: Fit the best model to the training data
+best_model.fit(X_train, y_train)
+
+# Step 14: Make predictions on the test data
+y_pred = best_model.predict(X_test)
+
+# Step 15: Evaluate the model using R2 score
+r2 = r2_score(y_test, y_pred)
+print("R-squared (R2) Score:", r2)
+
+# Step 16: Plot the pie chart for the predicted Social Media platform usage
+predicted_counts = label_encoder.inverse_transform(y_pred.astype(int))
+predicted_counts = pd.Series(predicted_counts).value_counts()
+
+# Step 17: Calculate the percentage of each platform
+percentage_values = (predicted_counts / len(y_pred)) * 100
+
+# Step 18: Plot the results in a pie chart
+plt.figure(figsize=(8, 8))
+plt.pie(percentage_values, labels=predicted_counts.index, autopct='%1.1f%%', startangle=140)
+plt.title('Percentage of Responses for Each Social Media Platform')
+plt.axis('equal')
+plt.show()
